@@ -34,8 +34,8 @@ debug_plot = 0;
 % Choose antenna configuration:
 %   "9x16" -> paper-matching 88 virtual elements
 %   "4x8"  -> reduced 20 virtual elements
-array_config = "9x16";
-% array_config = "4x8";
+% array_config = "9x16";
+array_config = "4x8";
 
 %% Radar waveform parameters
 

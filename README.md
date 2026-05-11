@@ -50,5 +50,5 @@ The output is a spatial map comparing reality vs. radar detection:
 ## Requirements & Execution
 * **Toolboxes:** Phased Array System & Signal Processing.
 * **Main Script:** `auto_phase_array.m` //used line 37 and 38 to run the simulation for both the 9x16 and 4x8 configurations (one by one).
-* **Plotting:** `plot_paper_figures.m`
+* **Plotting:** `plot_figures.m`
 

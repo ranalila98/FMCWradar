@@ -10,7 +10,7 @@
 %   radar_speed, dr, lambda, Nrx_virt
 %
 % Produces 6 figures:
-%   Fig 1 — Range profiles: single channel vs fused
+%   Fig 1 — Range profiles: single channel vs virtual-channel superposition
 %   Fig 2 — Single-channel RDM
 %   Fig 3 — Fused RDM Z(kv,kr)
 %   Fig 4 — Raw CFAR detections
@@ -18,10 +18,6 @@
 %   Fig 6 — Point Cloud Map (PCM)
 %
 % Saves each figure as vector PDF only.
-
-%% =========================================================
-%  IEEE Style Defaults
-%% =========================================================
 
 set(groot, ...
     'defaultAxesFontName',   'Times New Roman', ...
@@ -53,14 +49,24 @@ resp_pos = resp(nfft_r/2+1:end, :, :);
 
 [~, v0_idx] = min(abs(sp));
 
-% Single-channel range profile
-rp_single = abs(squeeze(resp_pos(:, 1, v0_idx)));
+% Single-channel range profile: receiver channel 1, max over Doppler
+rp_single = squeeze(max(abs(resp_pos(:, 1, :)), [], 3));
 rp_single_dB = 20*log10(rp_single ./ max(rp_single) + eps);
 
-% Fused range profile
-rp_fused = sqrt(mean(abs(resp_pos(:, :, v0_idx)).^2, 2));
-rp_fused = squeeze(rp_fused);
+% All virtual-channel range profiles: max over Doppler for each channel
+rp_all = squeeze(max(abs(resp_pos), [], 3));   % [range_bins x virtual_channels]
+
+% Normalize each virtual channel separately
+rp_all_dB = 20*log10(rp_all ./ max(rp_all, [], 1) + eps);
+
+% Fused profile for marker placement
+rp_fused = sqrt(mean(rp_all.^2, 2));
 rp_fused_dB = 20*log10(rp_fused ./ max(rp_fused) + eps);
+
+% ---------------------------------------------------------
+% RDM plots
+% Keep these as range-Doppler maps.
+% ---------------------------------------------------------
 
 % Single-channel RDM
 Z_single = reshape(abs(resp_pos(:,1,:)).^2, size(resp_pos,1), size(resp_pos,3));
@@ -73,7 +79,7 @@ num_truths = size(truth_targets, 1);
 num_dets   = size(detected_targets, 1);
 
 %% =========================================================
-%  FIG 1 — Range Profiles
+%  FIG 1 — Range Profiles, paper-style
 %% =========================================================
 
 f1 = figure('Units','inches','Position',[0.5 5 W2 H], ...
@@ -82,18 +88,20 @@ f1 = figure('Units','inches','Position',[0.5 5 W2 H], ...
             'Color','w');
 
 ax1a = subplot(1,2,1);
+
 plot(ax1a, r, rp_single_dB, 'k-', 'LineWidth', 0.75);
 xlabel(ax1a, 'Range (m)');
 ylabel(ax1a, 'Normalized magnitude (dB)');
 title(ax1a, '(a) Single receiver channel', 'FontWeight','normal');
-xlim(ax1a, [0 max(r)*0.8]);
+xlim(ax1a, [0 80]);
 ylim(ax1a, [-60 3]);
 grid(ax1a,'on');
 ax1a.GridLineStyle = ':';
 ax1a.GridAlpha = 0.4;
 
 ax1b = subplot(1,2,2);
-plot(ax1b, r, rp_fused_dB, 'k-', 'LineWidth', 0.75);
+
+plot(ax1b, r, rp_all_dB, 'LineWidth', 0.45);
 hold(ax1b,'on');
 
 for k = 1:num_dets
@@ -105,9 +113,10 @@ end
 hold(ax1b,'off');
 xlabel(ax1b, 'Range (m)');
 ylabel(ax1b, 'Normalized magnitude (dB)');
-title(ax1b, '(b) 88-channel fused', 'FontWeight','normal');
-xlim(ax1b, [0 max(r)*0.8]);
-ylim(ax1b, [-60 3]);
+title(ax1b, sprintf('(b) %d-channel superposition', Nrx_virt), ...
+      'FontWeight','normal');
+xlim(ax1b, [0 80]);
+ylim(ax1b, [-80 3]);
 grid(ax1b,'on');
 ax1b.GridLineStyle = ':';
 ax1b.GridAlpha = 0.4;
@@ -155,7 +164,8 @@ caxis(ax3, [-50 0]);
 set(ax3,'YDir','normal');
 xlabel(ax3,'Relative velocity (m/s)');
 ylabel(ax3,'Range (m)');
-title(ax3,'(b) Fused RDM, 88 virtual channels','FontWeight','normal');
+title(ax3, sprintf('(b) Fused RDM, %d virtual channels', Nrx_virt), ...
+      'FontWeight','normal');
 ylim(ax3,[0 max(r)*0.8]);
 
 noise_single = mean(Z_single_dB(:));
@@ -253,14 +263,7 @@ y_truth = truth_targets(:,1) .* cosd(truth_targets(:,3));
 x_det = detected_targets(:,1) .* sind(detected_targets(:,3));
 y_det = detected_targets(:,1) .* cosd(detected_targets(:,3));
 
-% Truth points
-h_truth = plot(ax6, x_truth, y_truth, 'o', ...
-    'MarkerSize', 7, ...
-    'MarkerFaceColor', [0 0.4470 0.7410], ...
-    'MarkerEdgeColor', [0 0.4470 0.7410], ...
-    'LineStyle', 'none');
-
-% Detected points
+% Plot detected first, then truth on top
 h_det = plot(ax6, x_det, y_det, 'd', ...
     'MarkerSize', 8, ...
     'MarkerFaceColor', [0.85 0 0], ...
@@ -268,18 +271,48 @@ h_det = plot(ax6, x_det, y_det, 'd', ...
     'LineWidth', 1.0, ...
     'LineStyle', 'none');
 
-% Truth labels only
+h_truth = plot(ax6, x_truth, y_truth, 'o', ...
+    'MarkerSize', 7, ...
+    'MarkerFaceColor', [0 0.4470 0.7410], ...
+    'MarkerEdgeColor', 'k', ...
+    'LineWidth', 0.9, ...
+    'LineStyle', 'none');
+
+% Label offsets
+truth_offsets = [
+     0.55, -0.10;
+     0.55,  0.25;
+     0.45,  0.35;
+     0.45,  0.35
+];
+
+det_offsets = [
+    -0.95, -0.85;
+    -0.95, -0.85;
+    -0.85, -1.00;
+    -0.85, -0.90;
+     0.65, -1.10;
+     0.65,  0.75;
+    -1.10,  0.70;
+     0.75,  1.00
+];
+
+% Truth labels
 for k = 1:num_truths
-    text(ax6, x_truth(k)+0.6, y_truth(k)+0.5, ...
+    idx = mod(k-1, size(truth_offsets,1)) + 1;
+    text(ax6, x_truth(k)+truth_offsets(idx,1), ...
+              y_truth(k)+truth_offsets(idx,2), ...
          sprintf('T%d', k), ...
          'FontSize', 8, ...
          'FontWeight', 'bold', ...
          'Color', [0 0.4470 0.7410]);
 end
 
-% Detected labels only
+% Detected labels
 for k = 1:num_dets
-    text(ax6, x_det(k)+0.7, y_det(k)-0.8, ...
+    idx = mod(k-1, size(det_offsets,1)) + 1;
+    text(ax6, x_det(k)+det_offsets(idx,1), ...
+              y_det(k)+det_offsets(idx,2), ...
          sprintf('D%d', k), ...
          'FontSize', 8, ...
          'FontWeight', 'bold', ...
@@ -303,7 +336,7 @@ ax6.GridLineStyle = '-';
 ax6.GridAlpha = 0.25;
 set(ax6, 'FontSize', 9, 'LineWidth', 0.8);
 
-% Add a little margin around points
+% Add margin around points
 x_all = [x_truth; x_det];
 y_all = [y_truth; y_det];
 
@@ -315,16 +348,24 @@ ylim(ax6, [min(y_all)-5, max(y_all)+5]);
 %% =========================================================
 
 fprintf('\n=== Detection Summary ===\n');
-fprintf('%-6s %-12s %-14s %-14s %-10s\n', ...
-        'Det#','R_det (m)','az_DFT (deg)','az_truth (deg)','R_err (m)');
+fprintf('%-6s %-12s %-12s %-12s %-14s %-14s %-10s %-10s\n', ...
+        'Det#','R_det','R_true','R_err','az_DFT','az_truth','V_det','V_true');
 
 for k = 1:num_dets
     [~,ti] = min(abs(target_dist - detected_targets(k,1)));
-    r_err  = detected_targets(k,1) - target_dist(ti);
 
-    fprintf('%-6d %-12.3f %-14.3f %-14.3f %-10.3f\n', ...
-            k, detected_targets(k,1), detected_targets(k,3), ...
-            target_az(ti), r_err);
+    r_det = detected_targets(k,1);
+    r_true = target_dist(ti);
+    r_err = r_det - r_true;
+
+    az_det = detected_targets(k,3);
+    az_true = target_az(ti);
+
+    v_det = detected_targets(k,2);
+    v_true = truth_targets(ti,2);
+
+    fprintf('%-6d %-12.3f %-12.3f %-12.3f %-14.3f %-14.3f %-10.3f %-10.3f\n', ...
+            k, r_det, r_true, r_err, az_det, az_true, v_det, v_true);
 end
 
 %% =========================================================
